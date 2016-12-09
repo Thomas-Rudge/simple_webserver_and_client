@@ -1,43 +1,7 @@
 require 'socket'
-
-module MessageTasks
-  def break_apart(request)
-    # Just in case the server recieves other fields (host), or a newline, we first split on
-    # newline, and then break apart the first line by spaces and return it.
-    request = request.gsub("\r", "").split("\n")
-    request[0] = request[0].split(" ")
-
-    request[0]
-  end
-
-  def check_request(request)
-    response = nil
-    puts "REQ: #{request}"
-    case
-    when request.length != 3
-      response = "HTTP/1.1 400 Bad Request\r\n"
-    when !(["HTTP/1.1", "HTTP/1.0"].include? request[2].upcase)
-      response = "HTTP/1.1 505 HTTP Version not supported\r\n"
-    end
-
-    response
-  end
-
-  def format_response(resource, type, http)
-    case
-    when resource.nil?
-      response = "#{http} #{type=="GET" ? "404" : "400"} Not Found"
-    when (["GET", "HEAD"].include? type)
-      response = "#{http} 200 OK\r\n#{gen_datetime}\r\nContent-Type:text/plain\r\nContent-Length:#{resource.length}\r\n"
-      response = type=="HEAD" ? response : "#{response}\r\n#{resource}\r\n"
-    end
-  end
-
-  def gen_datetime
-    Time.now.gmtime.strftime("%a, %d %b %Y %T GMT")
-  end
-end
-
+require 'json'
+require 'securerandom'
+require_relative 'message_tasks'
 
 class SimpleServer
   def initialize(port)
@@ -47,10 +11,21 @@ class SimpleServer
   def start
     loop {
       client  = @server.accept
-      request = client.gets
+      request = Array.new
+
+      while true
+        line = client.gets
+        request << line.gsub("\r\n", "")
+        break if line == "\r\n"
+      end
+
+      if request[0].upcase.start_with? "POST"
+        request[-1] = client.gets
+      end
+
       handler = RequestHandler.new(request)
 
-      response = handler.process_request
+      response = handler.handle_request
 
       client.puts response
       client.close
@@ -64,50 +39,94 @@ class RequestHandler
   include MessageTasks
 
   def initialize(request)
-    @request = break_apart(request)
+    @request  = request
+    @response = nil
+    @data     = nil
+
+    break_apart
+
+    @data = (@request.length > 1) ? @request[-1] : @data
+    @request = @request[0]
+    @request[0].upcase!
+  end
+
+  def handle_request
+    check_for_errors
+
+    return @response unless @response.nil?
+
+    process_request
+    format_response
+
+    @response
+  end
+
+  def break_apart
+    @request.compact!
+    @request[0] = @request[0].split(" ")
+
+    if @request[0][0].upcase == "POST" && @request.length > 1
+      @request[-1] = JSON.parse(@request[-1])
+    end
+  end
+
+  def check_for_errors
+    http = (["HTTP/1.1", "HTTP/1.0"].include? @request[2].upcase) ? @request[2] : nil
+
+    case
+    when http.nil?
+      @response = "HTTP/1.1 505 HTTP Version not supported\r\n#{header_fields()}"
+    when @request.length != 3
+      @response = "#{http} 400 Bad Request\r\n#{header_fields()}"
+    when !(["GET", "HEAD", "POST"].include? @request[0].upcase)
+      @response = "#{http} 501 Not Implemented\r\n#{header_fields()}"
+    when @request[0] == "POST" && @data.nil?
+      @response = "#{http} 422 Unprocessable Entity\r\n#{header_fields()}"
+    end
   end
 
   def process_request
-    response = check_request(@request)
-    return response unless response.nil?
+    @request[1] = "/thanks.html" if @request[0] == "POST"
+    @request[1] = Dir.pwd.concat(@request[1])
 
-    response = get_response
-    puts "RESP1: #{response}"
-    response = format_response(response, @request[0], @request[2])
-    puts "RESP2: #{response}"
-    response
-  end
-
-  def get_response
-    response = nil
-    case @request[0]
-    when "HEAD"
-      response = get(true)
-    when "GET"
-      response = get(false)
-    when "PUT"
-      put
-    else
-      response = "#{@request[2]} 501 Not Implemented\r\n"
+    if File.file? @request[1]
+      @response = File.open(@request[1], "r") { |file| file.read }
+      @response = @request[1].length if @request[0] == "HEAD"
     end
 
-    response
+    create_redirect_page if @request[0] == "POST"
   end
 
-  def get(header)
-    resource = Dir.pwd.concat(@request[1])
-    if File.exist?(resource)
-      resource = File.open(resource, "r") { |file| file.read }
-      resource = resource.length if header
-    else
-      resource = nil
+  def create_redirect_page
+    new_ele = create_html_ul_array_from_hash(@data)
+    new_ele = create_html_ul_string_from_array(new_ele)
+
+    @response.gsub!(/<%=.*%>/, new_ele)
+
+    @request[1] = "/thanks_#{SecureRandom.uuid}.html"
+    path = Dir.pwd.concat(@request[1])
+
+    File.open(path, "w") { |file| file.write(@response) }
+  end
+
+  def format_response
+    case
+    when @response.nil?
+      if ["GET", "HEAD"].include? @request[0]
+        @response = "#{@request[2]} 404 Not Found\r\n#{header_fields()}"
+      else
+        @response = "#{@request[2]} 500 Internal Server Error\r\n#{header_fields()}"
+      end
+    when (["GET", "HEAD"].include? @request[0])
+      response = "#{@request[2]} 200 OK\r\n"
+      response += header_fields()
+      response += "Content-Type:text/html\r\nContent-Length:"
+      response += "#{(@response.is_a? Integer) ? @response : @response.length}\r\n"
+
+      @response = @request[0]=="HEAD" ? response : "#{response}\r\n#{@response}\r\n"
+    when @request[0] == "POST"
+      @response = "#{@request[2]} 303 See Other\r\nLocation:#{@request[1]}\r\n#{header_fields}"
     end
-
-    resource
-  end
-
-  def put
-    nil
   end
 end
 
