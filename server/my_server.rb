@@ -18,15 +18,19 @@ class SimpleServer
         request << line.gsub("\r\n", "")
         break if line == "\r\n"
       end
-
+      # If it's a POST, read in the data using the content-length
       if request[0].upcase.start_with? "POST"
-        request[-1] = client.gets
+        request.each do |field|
+          if field.start_with? "Content-Length"
+            request[-1] = client.read(field.match(/\d+/).to_s.to_i)
+          end
+        end
       end
 
       handler = RequestHandler.new(request)
 
       response = handler.handle_request
-
+      puts "#{response}"
       client.puts response
       client.close
     }
@@ -92,9 +96,9 @@ class RequestHandler
     if File.file? @request[1]
       @response = File.open(@request[1], "r") { |file| file.read }
       @response = @request[1].length if @request[0] == "HEAD"
-    end
 
-    create_redirect_page if @request[0] == "POST"
+      create_redirect_page if @request[0] == "POST"
+    end
   end
 
   def create_redirect_page
@@ -131,7 +135,7 @@ class RequestHandler
 end
 
 # Only start the server if toplevel
-if __FILE__ == $0 || true
+if __FILE__ == $0
   server = SimpleServer.new(2000)
   server.start
 end
