@@ -4,7 +4,7 @@ module MessageTasks
   end
 
   def header_fields
-    "Date:#{gen_datetime}\r\nServer:Simple-Server\r\nConnection: Close\r\n"
+    "Date:#{gen_datetime}\r\nServer:Simple-Server\r\nConnection:Close\r\n"
   end
 
   def create_html_ul_array_from_hash(data)
@@ -33,7 +33,7 @@ module MessageTasks
       lvl += 2 if item == "<ul>"
     end
 
-    list[0].strip! #Because the first will already be indented
+    list[0].strip! #Because the first will be placed on an indented line
 
     list.join("\n")
   end

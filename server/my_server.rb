@@ -14,9 +14,8 @@ class SimpleServer
       request = Array.new
 
       while true
-        line = client.gets
-        request << line.gsub("\r\n", "")
-        break if line == "\r\n"
+        request << client.gets.gsub("\r\n", "")
+        break if request[-1].empty?
       end
       # If it's a POST, read in the data using the content-length
       if request[0].upcase.start_with? "POST"
@@ -28,9 +27,8 @@ class SimpleServer
       end
 
       handler = RequestHandler.new(request)
-
       response = handler.handle_request
-      puts "#{response}"
+
       client.puts response
       client.close
     }
@@ -43,9 +41,9 @@ class RequestHandler
   include MessageTasks
 
   def initialize(request)
-    @request  = request
-    @response = nil
-    @data     = nil
+    @request  = request # [Verb, URI, HTTP Version]
+    @response = nil     # HTTP response sent back to client
+    @data     = nil     # Parsed JSON data when verb = POST
 
     break_apart
 
@@ -70,7 +68,7 @@ class RequestHandler
     @request[0] = @request[0].split(" ")
 
     if @request[0][0].upcase == "POST" && @request.length > 1
-      @request[-1] = JSON.parse(@request[-1])
+      @request[-1] = (@request[-1].start_with? "{") ? JSON.parse(@request[-1]) : nil
     end
   end
 
@@ -104,7 +102,6 @@ class RequestHandler
   def create_redirect_page
     new_ele = create_html_ul_array_from_hash(@data)
     new_ele = create_html_ul_string_from_array(new_ele)
-
     @response.gsub!(/<%=.*%>/, new_ele)
 
     @request[1] = "/thanks_#{SecureRandom.uuid}.html"
@@ -136,6 +133,5 @@ end
 
 # Only start the server if toplevel
 if __FILE__ == $0
-  server = SimpleServer.new(2000)
-  server.start
+  SimpleServer.new(2000).start
 end
