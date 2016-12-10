@@ -37,7 +37,7 @@ class SimpleClient
   end
 
   def output_response
-    puts "#{@response.code} #{@response.message}" unless @verbose
+    puts "#{@response.code} #{@response.message} #{@response.http_version}" unless @verbose
     print @response.body if @response.instance_variable_get(:@body_exist)
   end
 
