@@ -13,7 +13,7 @@ Making a GET request.
 
 ```shell
 SimpleClient.new.connect("http://localhost:2000/index.html", "GET")
-200 OK
+200 OK 1.1
 <html>
   <body>
     <h1>Welcome to my Home Page</h1>
@@ -32,7 +32,7 @@ SimpleClient.new.connect("http://localhost:2000/index.html", "HEAD")
 Making a POST request
 ```shell
 data = {:Person=>{:name=>'Joe Bloggs', :email=>'joe.bloggs1@yahoo.com'}}
-SimpleClient.new.connect("http://localhost:2000/index.html", "HEAD", :data=>data)
+SimpleClient.new.connect("http://localhost:2000/index.html", "POST", :data=>data)
 303 See Other 1.1
 200 OK 1.1
 <html>
